@@ -186,15 +186,17 @@ void densest_subgraph(int &&h, std::string &&graph) {
     // #######################################################################
 
     const std::uint32_t N = vertices.size();
+    float max_core_density = static_cast<float>(clique_count) / static_cast<float>(N);
 
     // Worker threads to calculate the (k,h)-core values of the vertices.
     auto worker = [&visited, &N, &vertices, &degree_map, &cliques_map, &cliques, &sync_point](std::uint32_t for_start, std::uint32_t for_end) {  
-        std::uint32_t l = 1; 
+        std::uint32_t l = 0; 
         std::uint32_t s = 0;
-        std::uint32_t e = 0;
-        std::vector<std::uint32_t> buff;  
+        std::uint32_t e = 0; 
 
         while (visited < N) {
+            std::vector<std::uint32_t> buff;  
+            
             for (std::uint32_t k = for_start; k < for_end; k++) {
                 std::uint32_t v = vertices[k];
                 if (degree_map[v] == l) {
