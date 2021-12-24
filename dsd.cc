@@ -645,9 +645,9 @@ uint32_t core_decomposition(int &h,
         }
     }
 
-    /*for (auto& it : densest_core_edge_list) {
-        std::cout << it.first << " - " << it.second << std::endl;
-    }*/
+    for (auto& it : densest_core_edge_list) {
+        std::cout << it.first << " -- " << it.second << ";" << std::endl;
+    }
 
     SmallGraph densest_core_sg(densest_core_edge_list);
     DataGraph densest_core_dg(densest_core_sg);
@@ -969,10 +969,9 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
     double max_density = dc_density;
     std::unordered_map<uint32_t, int> ds_vertices;
 
-    /*auto min_cut_worker = [&](uint32_t for_start, uint32_t for_end) {
+    auto min_cut_worker = [&](uint32_t for_start, uint32_t for_end) {
         for (uint32_t k = for_start; k < for_end; k++) {
             std::vector<uint32_t> u_with_s;
-
             uint32_t s = 0; uint32_t t = h_minus_one_cliques.size() + vertices.size() + 1;
             
             double u = static_cast<double>(max_core_number);
@@ -982,7 +981,7 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
             double component_size = static_cast<double>(components[component_keys[k]].size());
 
             while ( u - l >= (1.0 / (component_size * (component_size - 1.0))) ) {
-
+                
                 alpha = (l + u) / 2.0;
 
                 std::cout << alpha << std::endl;
@@ -1021,21 +1020,15 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
                     }
                 }
 
-                std::cout << "Before min-cut" << std::endl;
-
                 std::vector<uint32_t> s_cut;
 
                 net.get_min_cut(s, t, s_cut);
 
-                std::cout << "After min-cut" << std::endl;
-
                 if (s_cut.size() == 1 && s_cut[0] == s) {
                     u = alpha;
-                    std::cout << "Here U" << std::endl;
                 } else {
                     l = alpha;
                     u_with_s = s_cut;
-                    std::cout << "Here L" << std::endl;
                 }
             }
 
@@ -1057,10 +1050,14 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
                 }
             }
 
-            double new_density = static_cast<double>(h_clique_count - vanishing_h_cliques.size()) / static_cast<double>(u_map.size());
+            double new_density = 0;
+
+            if (u_map.size() > 0) {
+                new_density = static_cast<double>(h_clique_count - vanishing_h_cliques.size()) / static_cast<double>(u_map.size());
+            }
 
             write_mutex.lock();
-            
+
             if (new_density > max_density) {
                 max_density = new_density;
                 ds_vertices = u_map;
@@ -1112,11 +1109,11 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
     }
 
     std::cout << "Min-cut threads finalized." << std::endl;
-    std::cout << "--------------------" << std::endl;*/
+    std::cout << "--------------------" << std::endl;
 
-    for (uint32_t k = 0; k < component_keys.size(); k++) {
+    
+    /*for (uint32_t k = 0; k < component_keys.size(); k++) {
         std::vector<uint32_t> u_with_s;
-
         uint32_t s = 0; uint32_t t = h_minus_one_cliques.size() + vertices.size() + 1;
         
         double u = static_cast<double>(max_core_number);
@@ -1195,21 +1192,34 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
             }
         }
 
-        double new_density = static_cast<double>(h_clique_count - vanishing_h_cliques.size()) / static_cast<double>(u_map.size());
+        double new_density = 0;
+
+        if (u_map.size() > 0) {
+            new_density = static_cast<double>(h_clique_count - vanishing_h_cliques.size()) / static_cast<double>(u_map.size());
+        }
 
         if (new_density > max_density) {
             max_density = new_density;
             ds_vertices = u_map;
         }
-    }
+    }*/
 
     std::cout << "Max density = " << max_density << std::endl;
 
-    std::cout << "Densest subgraph" << std::endl;
+    std::cout << "Densest subgraph (pseudo)" << std::endl;
     std::cout << "----------------" << std::endl;
 
     for (auto [key, value] : ds_vertices) {
         std::cout << key << ", ";
+    }
+
+    std::cout << std::endl;
+
+    std::cout << "Densest subgraph (original)" << std::endl;
+    std::cout << "----------------" << std::endl;
+
+    for (auto [key, value] : ds_vertices) {
+        std::cout << densest_core_vertices[key] << ", ";
     }
 
     std::cout << std::endl;
