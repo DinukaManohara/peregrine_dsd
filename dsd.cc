@@ -971,7 +971,7 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
 
     auto min_cut_worker = [&](uint32_t for_start, uint32_t for_end) {
         for (uint32_t k = for_start; k < for_end; k++) {
-            std::vector<uint32_t> u_with_s;
+            std::vector<uint32_t> u_with_s = components[component_keys[k]];
             uint32_t s = 0; uint32_t t = h_minus_one_cliques.size() + vertices.size() + 1;
             
             double u = static_cast<double>(max_core_number);
@@ -1058,7 +1058,7 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
 
             write_mutex.lock();
 
-            if (new_density > max_density) {
+            if (new_density >= max_density) {
                 max_density = new_density;
                 ds_vertices = u_map;
             }
@@ -1228,7 +1228,7 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
 int main() { //(int argc, char** argv) {
     auto start = std::chrono::high_resolution_clock::now();
 
-    find_densest_subgraph(5, "data/citeseer/");
+    find_densest_subgraph(5, "data/netscience/");
   
     auto stop = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
