@@ -658,18 +658,14 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
 
     std::unordered_map<uint32_t, uint32_t> component_hc_counts;
     std::vector<std::unordered_map<uint32_t, uint32_t>> local_component_hc_counts_holder;
-    std::unordered_map<uint32_t, uint32_t> component_vertex_counts;
+    std::unordered_map<uint32_t, std::vector<uint32_t>> component_vertices;
 
     for (uint32_t i = 1; i < parent_vector.size(); i++) {
         if ( !component_hc_counts.contains(parent_vector[i]) ) {
             component_hc_counts.insert({parent_vector[i], 0});
         }
 
-        if ( component_vertex_counts.contains(parent_vector[i]) ) {
-            component_vertex_counts[parent_vector[i]] += 1;
-        } else {
-            component_vertex_counts.insert({parent_vector[i], 1});
-        }
+        component_vertices[parent_vector[i]].push_back(i);
     }
 
     for (uint32_t i = 0; i < NUM_THREADS; i++) {
@@ -685,12 +681,11 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
 
     uint32_t h_clique_count = h_cliques.size();
 
+    uint32_t max_density_component_key;
     double dc_density = static_cast<double>(h_clique_count) / static_cast<double>(vertices.size());
 
-    std::mutex write_mutex;
     double max_density = dc_density;
-    std::unordered_map<uint32_t, int> ds_vertices;
-
+    
     auto component_worker = [&](uint32_t for_start, uint32_t for_end, uint32_t thread_id) {
         for (uint32_t k = for_start; k < for_end; k++) {
             local_component_hc_counts_holder[thread_id][parent_vector[h_cliques[k][0]]] += 1;
@@ -738,7 +733,14 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
     std::cout << "--------------------" << std::endl;
 
     for (auto [key, value] : component_hc_counts) {
-        std::cout << key << " = " << value << " Vertices = " << component_vertex_counts[key] << std::endl;
+        std::cout << key << " = " << value << " Vertices = " << component_vertices[key].size() << std::endl;
+
+        double new_density = static_cast<double>(value) / static_cast<double>(component_vertices[key].size());
+
+        if (new_density >= max_density) {
+            max_density = new_density;
+            max_density_component_key = key;
+        }
     }
 
     std::cout << "Max density = " << max_density << std::endl;
@@ -746,8 +748,8 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
     std::cout << "Densest subgraph (pseudo)" << std::endl;
     std::cout << "----------------" << std::endl;
 
-    for (auto [key, value] : ds_vertices) {
-        std::cout << key << ", ";
+    for (auto vertex : component_vertices[max_density_component_key]) {
+        std::cout << vertex << ", ";
     }
 
     std::cout << std::endl;
@@ -755,8 +757,8 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
     std::cout << "Densest subgraph (original)" << std::endl;
     std::cout << "----------------" << std::endl;
 
-    for (auto [key, value] : ds_vertices) {
-        std::cout << densest_core_vertices[key] << ", ";
+    for (auto vertex : component_vertices[max_density_component_key]) {
+        std::cout << densest_core_vertices[vertex] << ", ";
     }
 
     std::cout << std::endl;
