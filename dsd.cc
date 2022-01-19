@@ -479,7 +479,11 @@ uint32_t core_decomposition(int &h,
     std::uint32_t deleted_cliques = 0;
     const std::uint32_t N = vertices.size();
     std::uint32_t max_density_core_number = 0;
+    std::uint32_t previous_max_density_core_number = 0;
+    std::uint32_t previous_previous_max_density_core_number = 0;
     float max_core_density = 0.0f;
+    float previous_max_core_density = 0.0f;
+    float previous_previous_max_core_density = 0.0f;
 
     // Calculating the initial maximum core density (0th core and the 1st core)
     // #######################################################################
@@ -559,6 +563,14 @@ uint32_t core_decomposition(int &h,
             if (thread_id == 0) {
                 if (N > visited) {
                     new_core_density = static_cast<float>(clique_count - deleted_cliques) / static_cast<float>(N - visited);
+                    
+                    if (new_core_density > max_core_density) {
+                        previous_previous_max_core_density = previous_max_core_density;
+                        previous_max_core_density = max_core_density;
+
+                        previous_previous_max_density_core_number = previous_max_density_core_number;
+                        previous_max_density_core_number = max_density_core_number;
+                    }
 
                     if (new_core_density >= max_core_density) {
                         max_core_density = new_core_density;
@@ -613,8 +625,8 @@ uint32_t core_decomposition(int &h,
     }
     std::cout << "--------------------" << std::endl;
 
-    std::cout << "Max density core number: " << max_density_core_number << std::endl;
-    std::cout << "Max core density: " << max_core_density << std::endl;
+    std::cout << "Max density core number: " << previous_previous_max_density_core_number << std::endl;
+    std::cout << "Max core density: " << previous_previous_max_core_density << std::endl;
     std::cout << "Deleted cliques: " << deleted_cliques << std::endl;
     std::cout << "--------------------" << std::endl;
 
@@ -624,7 +636,8 @@ uint32_t core_decomposition(int &h,
     std::uint32_t max_core_number = 0;
 
     for (const auto& [key, value] : degree_map) {
-        if (value >= max_density_core_number) {
+        //if (value >= max_density_core_number) {
+        if (value >= previous_previous_max_density_core_number) {
             dc_ver_count += 1;
             densest_core_vertices.insert({dc_ver_count, key});
             densest_core_vertices_temp.insert({key, dc_ver_count});
@@ -673,6 +686,7 @@ uint32_t core_decomposition(int &h,
     std::cout << "Densest core density calculated separately = " << dc_density << std::endl;
 
     return max_core_number;
+
 }
 
 void connected_components(std::vector<uint32_t> &vertices, 
@@ -976,6 +990,7 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
             
             double u = static_cast<double>(max_core_number);
             double l = dc_density;
+            double new_density = 0;
             double alpha;
 
             double component_size = static_cast<double>(components[component_keys[k]].size());
@@ -984,7 +999,7 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
                 
                 alpha = (l + u) / 2.0;
 
-                std::cout << alpha << std::endl;
+                std::cout << l << ", " << alpha << ", " << u << std::endl;
 
                 Network net(component_size);
 
@@ -1029,6 +1044,7 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
                 } else {
                     l = alpha;
                     u_with_s = s_cut;
+                    new_density = alpha;
                 }
             }
 
@@ -1037,23 +1053,6 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
                 if (h_clique_map.contains(v)) {
                     u_map[v] = 1;
                 }
-            }
-
-            std::unordered_map<uint32_t, int> vanishing_h_cliques;
-            for (auto v : components[component_keys[k]]) {
-                if ( !u_map.contains(v) ) {
-                    for (auto i : h_clique_map[v]) {
-                        if ( !vanishing_h_cliques.contains(i) ) {
-                            vanishing_h_cliques[i] = 1;
-                        }
-                    }
-                }
-            }
-
-            double new_density = 0;
-
-            if (u_map.size() > 0) {
-                new_density = static_cast<double>(h_clique_count - vanishing_h_cliques.size()) / static_cast<double>(u_map.size());
             }
 
             write_mutex.lock();
@@ -1126,7 +1125,7 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
             
             alpha = (l + u) / 2.0;
 
-            std::cout << alpha << std::endl;
+            std::cout << l << ", " << alpha << ", " << u << std::endl;
 
             Network net(component_size);
 
@@ -1198,7 +1197,7 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
             new_density = static_cast<double>(h_clique_count - vanishing_h_cliques.size()) / static_cast<double>(u_map.size());
         }
 
-        if (new_density > max_density) {
+        if (new_density >= max_density) {
             max_density = new_density;
             ds_vertices = u_map;
         }
@@ -1228,7 +1227,7 @@ void find_densest_subgraph(int &&h, std::string &&graph) {
 int main() { //(int argc, char** argv) {
     auto start = std::chrono::high_resolution_clock::now();
 
-    find_densest_subgraph(5, "data/netscience/");
+    find_densest_subgraph(3, "data/netscience/");
   
     auto stop = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
