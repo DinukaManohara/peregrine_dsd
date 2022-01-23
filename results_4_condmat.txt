@@ -1,0 +1,3 @@
+data/ca-CondMat, 4, 4, 4.63022secs
+data/ca-CondMat, 4, 5, 15.246secs
+data/ca-CondMat, 4, 6, 54.8461secs
