@@ -18,9 +18,9 @@
 // DSD Portion
 using namespace Peregrine;
 
-const uint32_t NUM_THREADS = 4;
+uint32_t NUM_THREADS;
 
-void count_clique(int size, DataGraph &g, std::vector<std::vector<std::uint32_t>> &cliques) {
+void count_clique(int size, uint32_t nthreads, DataGraph &g, std::vector<std::vector<std::uint32_t>> &cliques) {
     //int NUM_THREADS = 4;
 
     std::mutex write_mutex;
@@ -39,7 +39,7 @@ void count_clique(int size, DataGraph &g, std::vector<std::vector<std::uint32_t>
         cliques.push_back(match.mapping);
         write_mutex.unlock();
     };
-    auto results = match<Pattern, uint64_t, AT_THE_END, UNSTOPPABLE>(g, patterns, NUM_THREADS, callback);
+    auto results = match<Pattern, uint64_t, AT_THE_END, UNSTOPPABLE>(g, patterns, nthreads, callback);
     //auto results = count(g, patterns, nthreads);
     /*int clique_count = 0;
     for (const auto &[pattern, count] : results) {
@@ -51,6 +51,7 @@ void count_clique(int size, DataGraph &g, std::vector<std::vector<std::uint32_t>
 
 uint32_t core_decomposition(int &h, 
                         DataGraph &g, 
+                        std::vector<std::vector<std::uint32_t>> &cliques,
                         std::unordered_map<std::uint32_t, std::uint32_t> &densest_core_vertices,
                         std::vector<std::pair<std::uint32_t,std::uint32_t>> &densest_core_edge_list)
 {
@@ -73,12 +74,10 @@ uint32_t core_decomposition(int &h,
 
     std::vector<std::jthread> counter_threads;
     std::vector<std::jthread> worker_threads;
-    std::vector<std::vector<std::uint32_t>> cliques;
     std::vector<std::uint32_t> vertices; 
     std::unordered_map<std::uint32_t, std::uint32_t> degree_map;
     std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> cliques_map;
 
-    count_clique(h, g, cliques);
     int clique_count = cliques.size();
     std::cout << "Count: " << clique_count << std::endl;
     std::cout << "--------------------" << std::endl;
@@ -119,7 +118,6 @@ uint32_t core_decomposition(int &h,
     }
 
     std::cout << "Counter threads initialized." << std::endl;
-    std::cout << "--------------------" << std::endl;
 
     for (std::uint32_t j = 0; j < NUM_THREADS; j++) {
         std::uint32_t for_start = j * chunk;
@@ -320,7 +318,6 @@ uint32_t core_decomposition(int &h,
     }
 
     std::cout << "Worker threads initialized." << std::endl;
-    std::cout << "--------------------" << std::endl;
     
     for (std::uint32_t j = 0; j < NUM_THREADS; j++) {
         std::uint32_t for_start = j * chunk;
@@ -338,7 +335,7 @@ uint32_t core_decomposition(int &h,
     }
 
     std::cout << "Worker threads finalized." << std::endl;
-    std::cout << "--------------------" << std::endl;
+    std::cout << "-------------------------" << std::endl;
 
     /*std::cout << "(k,h)-core values:" << std::endl;
     for (const auto& [key, value] : degree_map) {
@@ -630,22 +627,32 @@ void connected_components(std::vector<uint32_t> &vertices,
     std::cout << std::endl;*/
 }
 
-void find_densest_subgraph(int &h, std::string &graph) {
+void find_densest_subgraph(int &h, 
+                            DataGraph &g, 
+                            std::vector<std::vector<std::uint32_t>> &cliques,
+                            double (&ops_durations)[3]) 
+{
+    //////////////////////////////////////////////////////////////////////////////////////
+    auto start = std::chrono::high_resolution_clock::now();
     std::vector<std::jthread> component_threads;
-
-    DataGraph g(graph);
 
     // Mapping of original vertices to the new ones
     std::unordered_map<std::uint32_t, std::uint32_t> densest_core_vertices;
 
     // Edge vector for the densest core
     std::vector<std::pair<std::uint32_t,std::uint32_t>> densest_core_edge_list;
-    
+
     uint32_t max_core_number = core_decomposition(  h, 
                                                     g, 
+                                                    cliques,
                                                     densest_core_vertices, 
                                                     densest_core_edge_list);
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    ops_durations[0] += duration.count();
+    //////////////////////////////////////////////////////////////////////////////////////
 
+    start = std::chrono::high_resolution_clock::now();
     std::vector<uint32_t> vertices;
 
     for (uint32_t i = 1; i < densest_core_vertices.size() + 1; i++) {
@@ -658,7 +665,12 @@ void find_densest_subgraph(int &h, std::string &graph) {
     connected_components(   vertices, 
                             densest_core_edge_list, 
                             parent_vector);
+    stop = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    ops_durations[1] += duration.count();
+    //////////////////////////////////////////////////////////////////////////////////////
 
+    start = std::chrono::high_resolution_clock::now();
     std::unordered_map<uint32_t, uint32_t> component_hc_counts;
     std::vector<std::unordered_map<uint32_t, uint32_t>> local_component_hc_counts_holder;
     std::unordered_map<uint32_t, std::vector<uint32_t>> component_vertices;
@@ -680,7 +692,7 @@ void find_densest_subgraph(int &h, std::string &graph) {
 
     std::vector<std::vector<uint32_t>> h_cliques;
     
-    count_clique(h, dc_dg, h_cliques);
+    count_clique(h, NUM_THREADS, dc_dg, h_cliques);
 
     uint32_t h_clique_count = h_cliques.size();
 
@@ -709,7 +721,6 @@ void find_densest_subgraph(int &h, std::string &graph) {
     }
 
     std::cout << "Component threads initialized." << std::endl;
-    std::cout << "--------------------" << std::endl;
     
     for (std::uint32_t j = 0; j < NUM_THREADS; j++) {
         std::uint32_t for_start = j * chunk;
@@ -733,10 +744,10 @@ void find_densest_subgraph(int &h, std::string &graph) {
     }
 
     std::cout << "Component threads finalized." << std::endl;
-    std::cout << "--------------------" << std::endl;
+    std::cout << "----------------------------" << std::endl;
 
     for (auto [key, value] : component_hc_counts) {
-        std::cout << key << " = " << value << " Vertices = " << component_vertices[key].size() << std::endl;
+        //std::cout << key << " = " << value << " Vertices = " << component_vertices[key].size() << std::endl;
 
         double new_density = static_cast<double>(value) / static_cast<double>(component_vertices[key].size());
 
@@ -745,6 +756,11 @@ void find_densest_subgraph(int &h, std::string &graph) {
             max_density_component_key = key;
         }
     }
+
+    stop = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    ops_durations[2] += duration.count();
+    //////////////////////////////////////////////////////////////////////////////////////
 
     std::cout << "Max density = " << max_density << std::endl;
 
@@ -768,35 +784,46 @@ void find_densest_subgraph(int &h, std::string &graph) {
     */
 }
 
-int main() { //(int argc, char** argv) {
+int main(int argc, char** argv) {
+    NUM_THREADS = std::stoi(argv[2]);
+    std::string graph = argv[1];
     int iterations = 3;
-    int clique_sizes[] = { 4, 5 };
-    std::string graphs[] = {"data/astroph/"};
-    //std::string graphs[] = {"data/netscience/"};
-    //std::string graphs[] = {"data/ca-CondMat"};
-    //std::string graphs[] = {"data/com-youtube/"};
-    //std::string graphs[] = {"data/roadnet-ca/"};
-    //std::string graphs[] = {"data/com-amazon/"};
-    //std::string graphs[] = {"data/com-dblp/"};
+    int clique_sizes[] = { 4 };
+    //std::string graph = {"astroph"};
+    //std::string graph = {"netscience"};
+    //std::string graph = {"ca-CondMat"};
+    //std::string graph = {"com-youtube"};
+    //std::string graph = {"roadnet-ca"};
+    //std::string graph = {"com-amazon"};
+    //std::string graph = {"com-dblp"};
 
     //std::cout << duration.count() / 1000000.0 << " seconds consumed." << std::endl;
 
-    std::ofstream results_file("results_4_astroph.txt");
+    std::ofstream results_file("results_" + std::to_string(NUM_THREADS) + "_" + graph + ".txt");
+    std::string graph_path = "data/" + graph + "/";
+    DataGraph g(graph_path);
+    
+    for (auto clique_size : clique_sizes) {
+        std::vector<std::vector<std::uint32_t>> cliques;
+        double total_duration = 0;
+        double ops_durations[3] = {};
+        count_clique(clique_size, 4, g, cliques);
 
-    for (auto graph : graphs) {
-        for (auto clique_size : clique_sizes) {
-            double total_duration = 0;
-            for (int i = 0; i < iterations; i++) {
-                auto start = std::chrono::high_resolution_clock::now();
-
-                find_densest_subgraph(clique_size, graph);
-            
-                auto stop = std::chrono::high_resolution_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-                total_duration += duration.count();
-            }
-            results_file << graph << ", " << clique_size << ", " << total_duration / (iterations * 1000000.0) << "secs" << std::endl;
+        for (int i = 0; i < iterations; i++) {
+            auto start = std::chrono::high_resolution_clock::now();
+            find_densest_subgraph(clique_size, g, cliques, ops_durations);
+            auto stop = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+            total_duration += duration.count();
         }
+        results_file << graph << ", " 
+                        << NUM_THREADS << ", " 
+                        << clique_size << ", " 
+                        << total_duration / (iterations * 1000000.0) << ", "
+                        << ops_durations[0] / (iterations * 1000000.0) << ", "
+                        << ops_durations[1] / (iterations * 1000000.0) << ", "
+                        << ops_durations[2] / (iterations * 1000000.0)
+                        << std::endl;
     }
 
     results_file.close();

@@ -1,0 +1,3 @@
+data/com-amazon/, 4, 11.7364secs
+data/com-amazon/, 5, 8.62834secs
+data/com-amazon/, 6, 7.61147secs

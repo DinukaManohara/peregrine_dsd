@@ -1,0 +1,3 @@
+data/netscience/, 4, 0.225653secs
+data/netscience/, 5, 0.452628secs
+data/netscience/, 6, 1.05864secs

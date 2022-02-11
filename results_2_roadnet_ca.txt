@@ -1,1 +1,0 @@
-data/roadnet-ca/, 4, 6.0157secs
