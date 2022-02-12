@@ -73,10 +73,13 @@ uint32_t core_decomposition(int &h,
     pthread_barrier_init(&barrier, NULL, NUM_THREADS);
 
     std::vector<std::jthread> counter_threads;
+    std::vector<std::jthread> aggregator_threads;
     std::vector<std::jthread> worker_threads;
-    std::vector<std::uint32_t> vertices; 
-    std::unordered_map<std::uint32_t, std::uint32_t> degree_map;
-    std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> cliques_map;
+    std::vector<std::uint32_t> vertices(TOTAL_VERTICES); 
+    //std::unordered_map<std::uint32_t, std::uint32_t> degree_map;
+    //std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> cliques_map;
+    std::vector<std::uint32_t> degree_map(TOTAL_VERTICES + 1);
+    std::vector<std::vector<std::uint32_t>> cliques_map(TOTAL_VERTICES + 1);
 
     int clique_count = cliques.size();
     std::cout << "Count: " << clique_count << std::endl;
@@ -135,40 +138,76 @@ uint32_t core_decomposition(int &h,
     }
 
     std::cout << "Counter threads finalized." << std::endl;
-    std::cout << "--------------------" << std::endl;
+    std::cout << "--------------------------" << std::endl;
 
-    // Implement the algorithm to aggregate the count_maps and the clique_maps
-    // This one could possibly be improved further for performance
     // #######################################################################
-    for (std::uint32_t j = 0; j < NUM_THREADS; j++) {
-        for (const auto& [key, value] : count_map_holder[j]) {
-            if (degree_map.contains(key)) {
-                degree_map[key] += value;
-            } else {
-                degree_map[key] = value;
-                vertices.push_back(key);
+
+    // Aggregator threads to aggregate the clique-degree for each vertex present in the matched cliques.
+    auto aggregator = [&](std::uint32_t for_start, std::uint32_t for_end) {  
+        for (std::uint32_t a = for_start; a < for_end; a++) {
+            uint32_t key = a + 1;
+            degree_map[key] = 0;
+            vertices[a] = key;
+            cliques_map[key] = {};
+
+            for (std::uint32_t j = 0; j < NUM_THREADS; j++) {
+                if (count_map_holder[j].contains(key)) {
+                    degree_map[key] += count_map_holder[j][key];
+                }
+
+                if (clique_map_holder[j].contains(key)) {
+                    cliques_map[key].insert(
+                        cliques_map[key].end(), 
+                        std::make_move_iterator(clique_map_holder[j][key].begin()), 
+                        std::make_move_iterator(clique_map_holder[j][key].end())
+                    );
+                } /*else {
+                    cliques_map[key] = value;
+                }*/
             }
+        }
+    };
+
+    // Distributing the vertices among the worker threads.
+    lower = TOTAL_VERTICES - (TOTAL_VERTICES % NUM_THREADS);
+    upper = lower + NUM_THREADS;
+    lower_diff = TOTAL_VERTICES - lower;
+    upper_diff = upper - TOTAL_VERTICES;
+
+    if (lower_diff < upper_diff) {
+        chunk = lower / NUM_THREADS;
+    } else {
+        chunk = upper / NUM_THREADS;
+    }
+
+    std::cout << "Aggregator threads initialized." << std::endl;
+    
+    for (std::uint32_t j = 0; j < NUM_THREADS; j++) {
+        std::uint32_t for_start = j * chunk;
+        std::uint32_t for_end = (j + 1) * chunk;
+
+        if (j == NUM_THREADS - 1) {
+            for_end = TOTAL_VERTICES;
         }
 
-        for (const auto& [key, value] : clique_map_holder[j]) {
-            if (cliques_map.contains(key)) {
-                cliques_map[key].insert(
-                    cliques_map[key].end(), 
-                    std::make_move_iterator(value.begin()), 
-                    std::make_move_iterator(value.end())
-                );
-            } else {
-                cliques_map[key] = value;
-            }
-        }
+        aggregator_threads.emplace_back(aggregator, for_start, for_end);
     }
-    /*
+
+    for (auto& aggregator_thread : aggregator_threads) {
+        aggregator_thread.join();
+    }
+
+    std::cout << "Aggregator threads finalized." << std::endl;
+    std::cout << "-------------------------" << std::endl;
+
+
+    
     // Printing operations
     // #######################################################################
-
+    /*
     std::cout << "Degree map:" << std::endl;
-    for (const auto& [key, value] : degree_map) {
-        std::cout << key << " : " << value << std::endl;
+    for (uint32_t key = 1; key < degree_map.size(); key++) {
+        std::cout << key << " : " << degree_map[key] << " - " << cliques_map[key].size() << std::endl;
     }
 
     std::cout << "--------------------" << std::endl;
@@ -200,7 +239,7 @@ uint32_t core_decomposition(int &h,
     }
     std::cout << std::endl;
     std::cout << "--------------------" << std::endl;
-
+    
     // End of printing operations
     // #######################################################################
     */
@@ -226,7 +265,7 @@ uint32_t core_decomposition(int &h,
 
     // Worker threads to calculate the (k,h)-core values of the vertices.
     auto worker = [&](std::uint32_t thread_id, std::uint32_t for_start, std::uint32_t for_end) {  
-        std::uint32_t l = 1; 
+        std::uint32_t l = 0; 
         std::uint32_t s = 0;
         std::uint32_t e = 0; 
         std::uint32_t thread_deleted_cliques = 0;
@@ -237,7 +276,7 @@ uint32_t core_decomposition(int &h,
             //std::unordered_map<std::uint32_t, std::uint32_t> buff_map; 
 
             for (std::uint32_t k = for_start; k < for_end; k++) {
-                std::uint32_t v = vertices[k];
+                std::uint32_t v = k + 1;
                 if (degree_map[v] == l) {
                     buff.push_back(v);
                     //buff_map.insert(v, 0);
@@ -306,10 +345,10 @@ uint32_t core_decomposition(int &h,
     };
 
     // Distributing the vertices among the worker threads.
-    lower = vertices.size() - (vertices.size() % NUM_THREADS);
+    lower = TOTAL_VERTICES - (TOTAL_VERTICES % NUM_THREADS);
     upper = lower + NUM_THREADS;
-    lower_diff = vertices.size() - lower;
-    upper_diff = upper - vertices.size();
+    lower_diff = TOTAL_VERTICES - lower;
+    upper_diff = upper - TOTAL_VERTICES;
 
     if (lower_diff < upper_diff) {
         chunk = lower / NUM_THREADS;
@@ -324,7 +363,7 @@ uint32_t core_decomposition(int &h,
         std::uint32_t for_end = (j + 1) * chunk;
 
         if (j == NUM_THREADS - 1) {
-            for_end = vertices.size();
+            for_end = TOTAL_VERTICES;
         }
 
         worker_threads.emplace_back(worker, j, for_start, for_end);
@@ -353,16 +392,17 @@ uint32_t core_decomposition(int &h,
     std::uint32_t dc_ver_count = 0;
     std::uint32_t max_core_number = 0;
 
-    for (const auto& [key, value] : degree_map) {
+    //for (const auto& [key, value] : degree_map) {
+    for (uint32_t key = 1; key < degree_map.size(); key++) {
         //if (value >= max_density_core_number) {
-        if (value >= max_density_core_number) {
+        if (degree_map[key] >= max_density_core_number) {
             dc_ver_count += 1;
             densest_core_vertices.insert({dc_ver_count, key});
             densest_core_vertices_temp.insert({key, dc_ver_count});
         }
 
-        if (value > max_core_number) {
-            max_core_number = value;
+        if (degree_map[key] > max_core_number) {
+            max_core_number = degree_map[key];
         }
     }
 
@@ -785,10 +825,14 @@ void find_densest_subgraph(int &h,
 }
 
 int main(int argc, char** argv) {
-    NUM_THREADS = std::stoi(argv[2]);
+    std::vector<uint32_t> nthreads = {4, 2, 1};
     std::string graph = argv[1];
     int iterations = 3;
-    int clique_sizes[] = { 4 };
+    std::vector<int> clique_sizes;
+
+    for (int i = 2; i < argc; i++) {
+        clique_sizes.push_back(std::stoi(argv[i]));
+    }
     //std::string graph = {"astroph"};
     //std::string graph = {"netscience"};
     //std::string graph = {"ca-CondMat"};
@@ -799,24 +843,27 @@ int main(int argc, char** argv) {
 
     //std::cout << duration.count() / 1000000.0 << " seconds consumed." << std::endl;
 
-    std::ofstream results_file("results_" + std::to_string(NUM_THREADS) + "_" + graph + ".txt");
+    std::ofstream results_file("results_" + graph + ".txt");
     std::string graph_path = "data/" + graph + "/";
     DataGraph g(graph_path);
     
     for (auto clique_size : clique_sizes) {
         std::vector<std::vector<std::uint32_t>> cliques;
-        double total_duration = 0;
-        double ops_durations[3] = {};
         count_clique(clique_size, 4, g, cliques);
 
-        for (int i = 0; i < iterations; i++) {
-            auto start = std::chrono::high_resolution_clock::now();
-            find_densest_subgraph(clique_size, g, cliques, ops_durations);
-            auto stop = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-            total_duration += duration.count();
-        }
-        results_file << graph << ", " 
+        for (auto nthread : nthreads) {
+            NUM_THREADS = nthread;
+            double total_duration = 0;
+            double ops_durations[3] = {};
+            
+            for (int i = 0; i < iterations; i++) {
+                auto start = std::chrono::high_resolution_clock::now();
+                find_densest_subgraph(clique_size, g, cliques, ops_durations);
+                auto stop = std::chrono::high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+                total_duration += duration.count();
+            }
+            results_file << graph << ", " 
                         << NUM_THREADS << ", " 
                         << clique_size << ", " 
                         << total_duration / (iterations * 1000000.0) << ", "
@@ -824,6 +871,7 @@ int main(int argc, char** argv) {
                         << ops_durations[1] / (iterations * 1000000.0) << ", "
                         << ops_durations[2] / (iterations * 1000000.0)
                         << std::endl;
+        }
     }
 
     results_file.close();
